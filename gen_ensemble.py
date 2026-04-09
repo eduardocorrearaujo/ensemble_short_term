@@ -22,25 +22,25 @@ states_BR = ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI',
 
 
 
-def get_preds(state, model, week): 
+def get_preds(state, model, week, disease): 
 
-    df = pd.read_csv(f'forecast_tables/for_{model}_se_{week}_{state}.csv.gz')
+    df = pd.read_csv(f'forecast_tables/for_{model}_{disease}_{week.year}_{week.week}_{state}.csv.gz')
  
     df.date = pd.to_datetime(df.date)
         
     return df
 
-def get_all_preds(state, week):
+def get_all_preds(state, week, disease):
     if week ==0:
         week = 52
 
-    df_pred1 = get_preds(state, 'lstm', week = week)
+    df_pred1 = get_preds(state, 'lstm', week = week, disease=disease)
     df_pred1['model_id'] = 1
     
-    df_pred2 = get_preds(state, 'gp', week = week)
+    df_pred2 = get_preds(state, 'gp', week = week, disease=disease)
     df_pred2['model_id'] = 2
 
-    df_pred3 = get_preds(state, 'arima', week = week)
+    df_pred3 = get_preds(state, 'arima', week = week, disease=disease)
     df_pred3['model_id'] = 3
 
     df_preds =pd.concat([df_pred1, df_pred2, df_pred3])
@@ -48,13 +48,13 @@ def get_all_preds(state, week):
     return df_preds.rename(columns = {'lower': 'lower_95', 
                                          'upper': 'upper_95'})
     
-def get_ensemble(state, max_date, week):
+def get_ensemble(state, week, disease):
 
-    df = pd.read_csv(f'data/dengue_{state}.csv.gz')
-    df.date = pd.to_datetime(df.date)
-    df = df.loc[df.date == max_date]
+    #df = pd.read_csv(f'data/{disease}_{state}.csv.gz')
+    #df.date = pd.to_datetime(df.date)
+    #df = df.loc[df.date == max_date]
     
-    df['casos'] = inv_boxcox(df['casos'].values[0], 0.05) -1 
+    #df['casos'] = inv_boxcox(df['casos'].values[0], 0.05) -1 
 
     #df_preds = get_all_preds(state= state, week= for_week-1)
 
@@ -69,7 +69,7 @@ def get_ensemble(state, max_date, week):
     
     #weights_crps = e1.compute_weights(df, metric= 'crps') 
 
-    df_for = get_all_preds(state= state, week= for_week)
+    df_for = get_all_preds(state= state, week= for_week, disease=disease)
 
     efor = Ensemble(df = df_for,
         order_models = [1, 2, 3], 
@@ -87,9 +87,11 @@ def get_ensemble(state, max_date, week):
     return df_ens_crps, weights
 
 
-def make_plot(state, for_week, df_crps, df_ens_):
-        
-    data = pd.read_csv(f'data/dengue_{state}.csv.gz')
+def make_plot(state, for_week, df_crps, df_ens_,disease):
+    
+    for_week = for_week.week
+
+    data = pd.read_csv(f'data/{disease}_{state}.csv.gz')
         
     data.date = pd.to_datetime(data.date)
 
@@ -130,7 +132,7 @@ def make_plot(state, for_week, df_crps, df_ens_):
     for ax_ in ax.ravel():
         ax_.set_xlabel('Data')
         ax_.set_ylabel('Novos Casos')
-        ax_.set_title(f'Forecast casos prováveis - {state}')
+        ax_.set_title(f'Forecast casos prováveis - {disease} - {state}')
         ax_.legend()
         ax_.grid()
     
@@ -139,14 +141,14 @@ def make_plot(state, for_week, df_crps, df_ens_):
     fig.autofmt_xdate(rotation=30, ha='center')
         
     
-    plt.savefig(f'./figures/forecast_{for_week}_{state}.png', dpi = 300, bbox_inches = 'tight')
-    plt.savefig(f'./figures/forecast_{state}.png', dpi = 300, bbox_inches = 'tight')
+    plt.savefig(f'./figures/forecast_{for_week}_{disease}_{state}.png', dpi = 300, bbox_inches = 'tight')
+    plt.savefig(f'./figures/forecast_{disease}_{state}.png', dpi = 300, bbox_inches = 'tight')
     plt.close()
 
 
-def make_plot_new(state, for_week, df_crps):
+def make_plot_new(state, for_week, df_crps, disease):
         
-    data = pd.read_csv(f'data/dengue_{state}.csv.gz')
+    data = pd.read_csv(f'data/{disease}_{state}.csv.gz')
         
     data.date = pd.to_datetime(data.date)
 
@@ -158,7 +160,7 @@ def make_plot_new(state, for_week, df_crps):
     
     df_ens_crps = df_crps.loc[df_crps.state == state]
 
-    fig,ax = plt.subplots(1, figsize = (6.5, 5))
+    fig,ax = plt.subplots(1, figsize = (10, 5))
     
     ax.plot(data.date,  data.casos, color = 'black', linewidth = 2, linestyle = '-', label = 'Casos')
         
@@ -170,44 +172,45 @@ def make_plot_new(state, for_week, df_crps):
            
     ax.set_xlabel('Data')
     ax.set_ylabel('Novos Casos')
-    ax.set_title(f'Forecast casos prováveis - {state}')
+    ax.set_title(f'Forecast casos prováveis - {disease} - {state}')
     ax.legend()
     ax.grid()
         
     fig.autofmt_xdate(rotation=30, ha='center')
         
     #plt.savefig(f'./figures/forecast_{for_week}_{state}.png', dpi = 300, bbox_inches = 'tight')
-    plt.savefig(f'./figures/forecast_{state}.png', dpi = 300, bbox_inches = 'tight')
-    plt.savefig(f'./figures/forecast_{state}.svg', format="svg", bbox_inches = 'tight')
+    plt.savefig(f'./figures/forecast_{disease}_{state}.png', dpi = 300, bbox_inches = 'tight')
+    plt.savefig(f'./figures/forecast_{disease}_{state}.svg', format="svg", bbox_inches = 'tight')
     plt.close()
 
 if __name__ == '__main__':
+    disease = 'dengue'
 
-    df = pd.read_csv('data/dengue_BR.csv.gz')
-    df.date = pd.to_datetime(df.date)
-    max_date = df.date.max()
-    epi_week = Week.fromdate(df.date.max())
-    for_week = epi_week.week
-    year = epi_week.year
+    #epiweek = '202541'
+    #df = pd.read_csv(f'data/{disease}_BR.csv.gz')
+    #df.date = pd.to_datetime(df.date)
+    #max_date = df.date.max()
+    for epiweek in ['202546']: 
+        for_week = Week.fromstring(epiweek)
 
-    # compute ensemble
-    df_crps = pd.DataFrame()
-    #df_w = pd.DataFrame()
+        # compute ensemble
+        df_crps = pd.DataFrame()
+        #df_w = pd.DataFrame()
 
-    for state in states_BR:
-        print(state)
-        df_crps_ , weights_ = get_ensemble(state, max_date, for_week)
-        df_crps_['state'] = state
-        df_crps = pd.concat([df_crps, df_crps_], ignore_index = True)
+        for state in states_BR:
+            print(state)
+            df_crps_ , weights_ = get_ensemble(state, for_week, disease=disease)
+            df_crps_['state'] = state
+            df_crps = pd.concat([df_crps, df_crps_], ignore_index = True)
 
-        #df_w_ = pd.DataFrame(weights_, columns = ['weights'])
-        #df_w_['model']  = ['model_1', 'model_2', 'model_3']
-        #df_w_['state'] = state
-        #df_w = pd.concat([df_w, df_w_])
+            #df_w_ = pd.DataFrame(weights_, columns = ['weights'])
+            #df_w_['model']  = ['model_1', 'model_2', 'model_3']
+            #df_w_['state'] = state
+            #df_w = pd.concat([df_w, df_w_])
 
-    df_crps.to_csv(f'forecast_tables/for_ensemble_{year}_{for_week}.csv', index = False)
-    df_crps.to_csv(f'forecast_tables/for_ensemble.csv', index = False)
+        df_crps.to_csv(f'forecast_tables/for_ensemble_{for_week.year}_{for_week.week}_{disease}.csv', index = False)
+        df_crps.to_csv(f'forecast_tables/for_ensemble_{disease}.csv', index = False)
 
 
-    for state in states_BR:
-        make_plot_new(state, for_week, df_crps)
+        #for state in states_BR:
+        #    make_plot_new(state, for_week, df_crps, disease)

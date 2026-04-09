@@ -141,6 +141,7 @@ def apply_forecast(city, ini_date, end_date, look_back, predict_n, filename, mod
                                     filename=filename,  end_train_date = end_train_date
                                     )
 
+
     model = keras.models.load_model(f'./saved_models/{model_name}.keras', safe_mode=False, compile=False)
 
     pred = evaluate(model, X_for, batch_size=batch_size)
@@ -155,7 +156,7 @@ def apply_forecast(city, ini_date, end_date, look_back, predict_n, filename, mod
 
     df = create_df_for(end_date, predict_n, df_pred, df_pred2_5, df_pred97_5)
 
-    return df
+    return df, X_for
 
 def evaluate(model, Xdata, batch_size, uncertainty=True):
     """

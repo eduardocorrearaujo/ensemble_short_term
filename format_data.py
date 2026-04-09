@@ -8,16 +8,24 @@ states_BR = ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI',
  'RR', 'RO', 'AC', 'PA', 'DF', 'GO', 'MT', 'MS',
  'RS', 'SC', 'PR']
 
-def filter_agg_data(state):
+def filter_agg_data(state, disease, epiweek = None):
     '''
     Get the state data and aggregate it by week
     '''
-    df = pd.read_parquet(f'../load_infodengue_data/data/cases/{state}_dengue.parquet', columns=['municipio_geocodigo', 'casos_est', 'casprov'])
+    if epiweek is None: 
+        df = pd.read_parquet(f'../load_infodengue_data/data/cases/{state}_{disease}.parquet', columns=['municipio_geocodigo', 'casos_est', 'casprov'])
+
+    else: 
+        df_before = pd.read_parquet(f'../load_infodengue_data/data/cases/{state}_{disease}.parquet', columns=['municipio_geocodigo', 'casos_est', 'casprov'])
+
+        dft = pd.read_parquet(f'../alertas-parquet/{disease}_{state}_{epiweek}.parquet')
+
+        min_date = dft.index.min()
+
+        df = pd.concat([df_before.loc[df_before.index < min_date], dft])
 
     df.index = pd.to_datetime(df.index) 
-    
-    df = df.loc[df.index >= '2023-06-01']
-    
+        
     df = df.resample('W-SUN').sum().drop(['municipio_geocodigo'], axis =1).reset_index()
 
     df['uf'] = state
@@ -52,7 +60,7 @@ def get_slope(casos, axis = 0):
      
     return np.polyfit(np.arange(0,4), casos, 1)[0]
 
-def org_data(df_all, state):
+def org_data(df_all, state, disease, epiweek = None):
     if state == 'BR':
         df = df_all.copy()
     else: 
@@ -87,65 +95,67 @@ def org_data(df_all, state):
     
     df = df.dropna()
 
-    df.to_csv(f'data/dengue_{state}.csv.gz')
+    if epiweek is None: 
+        df.to_csv(f'data/{disease}_{state}.csv.gz')
+    else:
+        df.to_csv(f'data/{disease}_{state}_{epiweek}.csv.gz') 
+    
 
 
 if __name__ == '__main__':
+
+    disease = 'dengue'
+
+    #epiweek = None
+
+    for epiweek in   ['202541', '202545', '202547', '202548', '202549', '202550','202553', '202604', '202608', '202610']:
     
-    df_prop = pd.DataFrame()
+        df_prop = pd.DataFrame()
 
-    for state in states_BR: 
-        df_prop = pd.concat([df_prop, filter_agg_data(state)])
+        for state in states_BR: 
+            df_prop = pd.concat([df_prop, filter_agg_data(state, disease, epiweek)])
 
-    # definindo o intervalo dos últimos 6 meses para o cálculo das proporções
-    end_date_prop = df_prop.data_iniSE.max() - pd.DateOffset(weeks=10)
-    begin_date_prop = df_prop.data_iniSE.max() - pd.DateOffset(weeks=34)
+        # definindo o intervalo dos últimos 6 meses para o cálculo das proporções
+        end_date_prop = df_prop.data_iniSE.max() - pd.DateOffset(weeks=10)
+        begin_date_prop = df_prop.data_iniSE.max() - pd.DateOffset(weeks=34)
 
-    print(begin_date_prop)
-    print(end_date_prop)
+        print(begin_date_prop)
+        print(end_date_prop)
 
-    # dicionário onde serão salvas as proporções 
-    prop_state = dict()
+        # dicionário onde serão salvas as proporções 
+        prop_state = dict()
 
-    for state in states_BR: 
-        df_filter = df_prop.loc[(df_prop.uf == state) & (df_prop.data_iniSE >= begin_date_prop) & (df_prop.data_iniSE <= end_date_prop)]
+        for state in states_BR: 
+            df_filter = df_prop.loc[(df_prop.uf == state) & (df_prop.data_iniSE >= begin_date_prop) & (df_prop.data_iniSE <= end_date_prop)]
 
-        prop_state[state]= np.mean(df_filter['casprov']/df_filter['casos_est'])
+            prop_state[state]= np.mean(df_filter['casprov']/df_filter['casos_est'])
+        
+
+        ## renomeando as colunas do novo dataset para conseguir concatenar com o antigo  
+        df_prop.data_iniSE = pd.to_datetime(df_prop.data_iniSE)
+
+        df_prop.set_index('data_iniSE', inplace = True)
+
+        df_up_no_delay =  df_prop.loc[(df_prop.index <= end_date_prop)].rename(columns = {'casprov': 'casos'}).drop('casos_est',axis =1)
+
+        df_up_no_delay = df_up_no_delay.reset_index().rename(columns= {'data_iniSE':'date'})[['date', 'casos', 'uf']]
+        df_up_cor = df_prop.loc[df_prop.index > end_date_prop].reset_index().rename(columns= {'data_iniSE':'date'})
+
+        # dados atualizados 
+        #df_update = df_atual
+        df_update =  df_up_no_delay
+        
+        for state in states_BR:
+
+            df_update  = pd.concat([df_update, up_data(df_up_cor, prop_state, state)])
+
+        if epiweek is None: 
+            df_update.to_csv(f'data/{disease}_update.csv.gz')
+        else: 
+            df_update.to_csv(f'data/{disease}_{epiweek}_update.csv.gz')
 
 
-    ### dados de antes de 2024
-    df_atual = pd.read_csv('data/dengue_up.csv.gz', index_col = 'date', usecols = ['date', 'regional_geocode', 'casos', 'uf'])
+        for state in states_BR:
+            org_data(df_update, state, disease=disease, epiweek=epiweek)
 
-    df_atual.index = pd.to_datetime(df_atual.index)
-
-    df_atual['uf'] = df_atual['uf'].str[:2]
-
-    df_atual = df_atual.groupby('uf').resample('W-SUN').sum().drop(['uf', 'regional_geocode'], axis = 1).reset_index()
-
-    #df_atual = df_atual.loc[df_atual.date <= end_date_prop]
-    df_atual = df_atual.loc[df_atual.date < '2024-01-01']
-
-    ## renomeando as colunas do novo dataset para conseguir concatenar com o antigo  
-    df_prop.data_iniSE = pd.to_datetime(df_prop.data_iniSE)
-
-    df_prop.set_index('data_iniSE', inplace = True)
-
-    df_up_no_delay =  df_prop.loc[(df_prop.index <= end_date_prop) & (df_prop.index >= '2024-01-01')].rename(columns = {'casprov': 'casos'}).drop('casos_est',axis =1)
-
-    df_up_no_delay = df_up_no_delay.reset_index().rename(columns= {'data_iniSE':'date'})[['date', 'casos', 'uf']]
-    df_up_cor = df_prop.loc[df_prop.index > end_date_prop].reset_index().rename(columns= {'data_iniSE':'date'})
-
-    # dados atualizados 
-    #df_update = df_atual
-    df_update = pd.concat([df_atual, df_up_no_delay])
-    
-    for state in states_BR:
-
-        df_update  = pd.concat([df_update, up_data(df_up_cor, prop_state, state)])
-
-    df_update.to_csv('data/dengue_update.csv.gz')
-
-    for state in states_BR:
-        org_data(df_update, state)
-
-    org_data(df_update, 'BR')
+        org_data(df_update, 'BR', disease=disease, epiweek=epiweek)

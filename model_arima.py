@@ -4,6 +4,7 @@ import pandas as pd
 from model_gp import get_next_n_weeks
 from pmdarima import preprocessing as ppc
 from mosqlient.forecast import Arima
+from epiweeks import Week 
 
 def get_prediction_dataframe(preds, date, boxcox) -> pd.DataFrame:
     """
@@ -40,7 +41,7 @@ def get_prediction_dataframe(preds, date, boxcox) -> pd.DataFrame:
 
     return df_preds
 
-def train_model(df, state, train_end_date):
+def train_model(df, state, train_ini_date, train_end_date, disease):
     '''
     Function to train and save the arima model 
     '''
@@ -53,17 +54,17 @@ def train_model(df, state, train_end_date):
 
     m_arima = Arima(df = df_)
 
-    model = m_arima.train( train_ini_date='2015-01-01', train_end_date = train_end_date)
+    model = m_arima.train( train_ini_date=train_ini_date, train_end_date = train_end_date)
 
     # Save model
-    with open(f'saved_models/arima_{state}.pkl', 'wb') as pkl:
+    with open(f'saved_models/arima_{disease}_{state}.pkl', 'wb') as pkl:
         pickle.dump(model, pkl)
     
     # save transf on data
     bc_transformer = m_arima.boxcox
-    joblib.dump(bc_transformer, f'saved_models/bc_{state}.pkl')
+    joblib.dump(bc_transformer, f'saved_models/bc_{disease}_{state}.pkl')
 
-def apply_model(df,state, for_week):
+def apply_model(df,state, disease):
     '''
     Function to load and apply the pre trained model 
     '''
@@ -73,13 +74,15 @@ def apply_model(df,state, for_week):
     else: 
         df_ = df.set_index('dates').drop(['uf'], axis =1).resample('W-SUN').sum()#.reset_index()
 
+    for_week = Week.fromdate(pd.to_datetime(df_.index.max()))
+
     df_['y'] = df_['y'] + 0.1
 
-    bc = joblib.load(f'saved_models/bc_{state}.pkl')
+    bc = joblib.load(f'saved_models/bc_{disease}_{state}.pkl')
 
     df_.loc[:, "y"] = bc.transform(df_.y)[0]
 
-    with open(f'saved_models/arima_{state}.pkl', 'rb') as pkl:
+    with open(f'saved_models/arima_{disease}_{state}.pkl', 'rb') as pkl:
         m_arima = pickle.load(pkl)
 
     # update the model with the new data:
@@ -91,7 +94,7 @@ def apply_model(df,state, for_week):
 
     df_for = get_prediction_dataframe(preds, date, bc)
 
-    df_for.to_csv(f'forecast_tables/for_arima_se_{for_week}_{state}.csv.gz', index = False)
+    df_for.to_csv(f'forecast_tables/for_arima_{disease}_{for_week.year}_{for_week.week}_{state}.csv.gz', index = False)
 
     return 
 

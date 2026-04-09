@@ -109,7 +109,10 @@ def norm_data(X_train, y_train, X_test, y_test):
     X_train_ = sc_x.transform(X_train)
     #y_train_ = sc_y.transform(y_train.values.reshape(-1, 1))
     #y_train_ = y_train.values.reshape(-1, 1)
-    X_test_ = sc_x.transform(X_test)
+    if X_test.shape[0] > 0: 
+        X_test_ = sc_x.transform(X_test)
+    else: 
+        X_test_ = X_test
     #y_test_ = sc_y.transform(y_test.values.reshape(-1, 1))
     #y_test_ = y_test.values.reshape(-1, 1)
     
@@ -163,17 +166,20 @@ def preprocess_data(data, d =10, look_back = 11,
     return data_lag, target, X_train_, y_train, X_test_, y_test
     
 
-def train_model(state, end_train):
+def train_model(state,ini_train,  end_train, disease):
     '''
     Function to train and save the gp model 
     '''
 
-    df_ = pd.read_csv(f'data/dengue_{state}.csv.gz', index_col = 'date')
+    df_ = pd.read_csv(f'data/{disease}_{state}.csv.gz', index_col = 'date')
 
     df_.index = pd.to_datetime(df_.index)
 
+    df_ = df_.loc[df_.index > ini_train]
+    print(df_.shape)
+
     data_lag, target, X_train, y_train, X_test, y_test = preprocess_data(df_, 3, 3, 
-                                                                        ini_train = '2015-06-01',
+                                                                        ini_train = ini_train,
                                                                         end_train = end_train,
                                                                         ini_test = end_train,
                                                                         end_test = end_train)
@@ -181,16 +187,19 @@ def train_model(state, end_train):
     m = gp_model(X_train, y_train.values.reshape(-1,1), idx_time=20)
 
     exportable_model = ExportableGPModel(m)
-    tf.saved_model.save(exportable_model, f"saved_models/gp_{state}")
+    tf.saved_model.save(exportable_model, f"saved_models/gp_{disease}_{state}")
     
     return 
 
-def apply_model(state, end_date):
+def apply_model(state, end_date, disease, epiweek):
     '''
     Function to load and apply the gp model 
     '''
 
-    df_ = pd.read_csv(f'data/dengue_{state}.csv.gz', index_col = 'date')
+    if epiweek is None: 
+        df_ = pd.read_csv(f'data/{disease}_{state}.csv.gz', index_col = 'date')
+    else: 
+        df_ = pd.read_csv(f'data/{disease}_{state}_{epiweek}.csv.gz', index_col = 'date')
 
     df_.index = pd.to_datetime(df_.index)
 
@@ -202,9 +211,9 @@ def apply_model(state, end_date):
                                                                         ini_test = end_train,
                                                                         end_test = end_date)
     
-    for_week = Week.fromdate(pd.to_datetime(end_date)).week
+    for_week = Week.fromdate(pd.to_datetime(end_date))
     
-    m = tf.saved_model.load(f"saved_models/gp_{state}")
+    m = tf.saved_model.load(f"saved_models/gp_{disease}_{state}")
 
     pred_te, var_te  = m.predict(X_test)
 
@@ -218,6 +227,6 @@ def apply_model(state, end_date):
     
     df_preds['upper'] = inv_boxcox(pred_te + 1.96*var_te, 0.05).reshape(1,-1)[0]  
 
-    df_preds.to_csv(f'forecast_tables/for_gp_se_{for_week}_{state}.csv.gz', index = False)
+    df_preds.to_csv(f'forecast_tables/for_gp_{disease}_{for_week.year}_{for_week.week}_{state}.csv.gz', index = False)
     
     return 
